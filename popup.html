@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabMind — AI Tab Analyzer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <header>
+      <div class="logo">
+        <img src="icons/icon48.png" alt="TabMind Logo">
+        <h1>TabMind</h1>
+      </div>
+      <button id="settings-btn" class="nav-item" style="border:none; background:none;">⚙️</button>
+    </header>
+
+    <nav>
+      <div id="nav-tabs" class="nav-item active" data-view="view-tabs">Analyze</div>
+      <div id="nav-insights" class="nav-item" data-view="view-insights">Insights</div>
+      <div id="nav-suggestions" class="nav-item" data-view="view-suggestions">Discover</div>
+    </nav>
+
+    <main>
+      <!-- Analyze Tabs View -->
+      <section id="view-tabs" class="view active">
+        <div id="tabs-actions" style="margin-bottom: 16px;">
+          <button id="btn-analyze-tabs" class="btn btn-primary">
+            Analyze & Prioritize Open Tabs
+          </button>
+        </div>
+        
+        <div id="loading-tabs" class="loading-overlay">
+          <div class="spinner"></div>
+          <p>AI is reading your tabs...</p>
+        </div>
+
+        <div id="tab-list" class="tab-list">
+          <div class="empty-state">
+            Click the button above to analyze your currently open tabs and see which ones matter most.
+          </div>
+        </div>
+      </section>
+
+      <!-- Insights View -->
+      <section id="view-insights" class="view">
+        <div id="insights-content">
+          <div id="insight-summary" class="insight-stat-card">
+            <div id="prod-score" class="score-value">--</div>
+            <div id="prod-label" class="score-label">Productivity Score</div>
+          </div>
+          
+          <div id="habits-text" class="tab-nature" style="margin-bottom: 20px;"></div>
+
+          <h3>Time by Category</h3>
+          <div id="category-chart" class="category-chart"></div>
+
+          <h3 style="margin-top: 20px; margin-bottom: 10px;">Fun Facts</h3>
+          <div id="fun-facts" class="tab-list"></div>
+        </div>
+
+        <div id="loading-insights" class="loading-overlay">
+          <div class="spinner"></div>
+          <p>Generating your personal insights...</p>
+        </div>
+
+        <div id="empty-insights" class="empty-state" style="display: none;">
+          Not enough browsing data yet. Spend some time browsing to see insights!
+        </div>
+      </section>
+
+      <!-- Suggestions View -->
+      <section id="view-suggestions" class="view">
+        <div id="suggestions-list" class="tab-list"></div>
+
+        <div id="loading-suggestions" class="loading-overlay">
+          <div class="spinner"></div>
+          <p>Finding resources you'll love...</p>
+        </div>
+
+        <div id="empty-suggestions" class="empty-state">
+          Analyze your tabs or browse more to get personalized recommendations.
+        </div>
+      </section>
+
+      <!-- Settings View -->
+      <section id="view-settings" class="view">
+        <h2 style="font-size: 18px; margin-bottom: 12px;">Settings</h2>
+        <div class="form-group">
+          <label for="api-key">Google Gemini API Key</label>
+          <input type="password" id="api-key" placeholder="Enter your API key here...">
+          <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">
+            Don't have one? Get it for free at <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color: var(--accent-secondary);">Google AI Studio</a>.
+          </p>
+        </div>
+        <button id="save-settings" class="btn btn-primary">Save Settings</button>
+        <div id="save-status" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="ai-service.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
