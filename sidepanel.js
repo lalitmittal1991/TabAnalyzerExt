@@ -9,8 +9,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const views = document.querySelectorAll('.view');
   const btnAnalyzeTabs = document.getElementById('btn-analyze-tabs');
   const apiKeyInput = document.getElementById('api-key');
+  const docTitleInput = document.getElementById('doc-title');
+  const docIdInput = document.getElementById('doc-id');
   const btnSaveSettings = document.getElementById('save-settings');
   const settingsBtn = document.getElementById('settings-btn');
+  const btnSyncGDoc = document.getElementById('btn-sync-gdoc');
+  
+  window.refreshTimeout = null;
   
   // -- View Switching --
   function showView(viewId) {
@@ -33,20 +38,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   settingsBtn.addEventListener('click', () => showView('view-settings'));
 
   // -- Settings Management --
-  chrome.storage.local.get('tabmind_api_key', (data) => {
-    if (data.tabmind_api_key) {
-      apiKeyInput.value = data.tabmind_api_key;
-    } else {
-      // If no API key, start at settings
+  chrome.storage.local.get(['tabmind_api_key', 'tabmind_doc_title', 'tabmind_doc_id'], (data) => {
+    if (data.tabmind_api_key) apiKeyInput.value = data.tabmind_api_key;
+    if (data.tabmind_doc_title) docTitleInput.value = data.tabmind_doc_title;
+    if (data.tabmind_doc_id) docIdInput.value = data.tabmind_doc_id;
+
+    if (!data.tabmind_api_key) {
       showView('view-settings');
     }
   });
 
   btnSaveSettings.addEventListener('click', () => {
     const key = apiKeyInput.value.trim();
-    chrome.storage.local.set({ 'tabmind_api_key': key }, () => {
+    const title = docTitleInput.value.trim() || 'TabMind Discovery';
+    const id = docIdInput.value.trim();
+
+    chrome.storage.local.set({ 
+      'tabmind_api_key': key,
+      'tabmind_doc_title': title,
+      'tabmind_doc_id': id
+    }, () => {
       const status = document.getElementById('save-status');
-      status.innerText = 'Key saved successfully!';
+      status.innerText = 'Settings saved permanently!';
       status.style.color = 'var(--success)';
       setTimeout(() => { status.innerText = ''; }, 3000);
     });
@@ -242,4 +255,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       loading.style.display = 'none';
     }
   }
+  // -- Auto-refresh Listener (from Background) --
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'refreshAnalysis') {
+      const activeNav = document.querySelector('.nav-item.active');
+      if (activeNav && activeNav.dataset.view === 'view-tabs') {
+        clearTimeout(window.refreshTimeout);
+        window.refreshTimeout = setTimeout(() => {
+          btnAnalyzeTabs.click();
+        }, 5000); // 5s delay to ensure user has settled on tab
+      }
+    }
+  });
+
+  // -- Google Docs Sync --
+  btnSyncGDoc.addEventListener('click', async () => {
+    const confirmed = confirm("Are you sure you want to end your session and push discovery findings to Google Docs?");
+    if (!confirmed) return;
+
+    btnSyncGDoc.disabled = true;
+    btnSyncGDoc.innerText = '⌛ Syncing...';
+
+    try {
+      const trackingResponse = await chrome.runtime.sendMessage({ action: 'getTrackingData' });
+      const currentTabs = await chrome.tabs.query({ currentWindow: true });
+      const suggestions = await generateSuggestions(trackingResponse.data, currentTabs);
+      
+      const result = await syncToGoogleDoc(suggestions);
+      
+      if (result.count > 0) {
+        alert(`Successfully synced ${result.count} new links to "TabMind Discovery" Google Doc!`);
+      } else {
+        alert("No new unique links found to sync.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert(`Sync failed: ${err.message}. Make sure you've configured your OAuth Client ID in manifest.json.`);
+    } finally {
+      btnSyncGDoc.disabled = false;
+      btnSyncGDoc.innerText = '📂 End Session & Sync to Google Doc';
+    }
+  });
 });
+

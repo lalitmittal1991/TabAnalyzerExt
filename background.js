@@ -16,11 +16,23 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && currentTabInfo && currentTabInfo.tabId === tabId) {
-    // URL changed on current tab — record previous and restart
-    await recordCurrentAndStart(tabId);
+  if (changeInfo.status === 'complete') {
+    if (currentTabInfo && currentTabInfo.tabId === tabId) {
+      await recordCurrentAndStart(tabId);
+    }
+    notifySidePanelRefresh();
   }
 });
+
+chrome.tabs.onCreated.addListener((tab) => {
+  notifySidePanelRefresh();
+});
+
+function notifySidePanelRefresh() {
+  chrome.runtime.sendMessage({ action: 'refreshAnalysis' }).catch(() => {
+    // Ignore error if side panel is not open
+  });
+}
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (currentTabInfo && currentTabInfo.tabId === tabId) {
@@ -142,6 +154,10 @@ function extractPageText() {
 }
 
 // ---- Initialization ----
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error(error));
+
 // Record the currently active tab when the service worker starts
 (async () => {
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });

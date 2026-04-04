@@ -8,14 +8,18 @@
     "activeTab",
     "scripting",
     "storage",
-    "alarms"
+    "alarms",
+    "sidePanel",
+    "identity"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_title": "TabMind"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "background": {
     "service_worker": "background.js"
