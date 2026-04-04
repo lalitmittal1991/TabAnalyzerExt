@@ -35,5 +35,13 @@
       "js": ["content-script.js"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "oauth2": {
+    "client_id": "784061723349-i8iqdi05v5m0tfe8ngge7o7mhvaq83sg.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/documents",
+      "https://www.googleapis.com/auth/drive.file"
+    ]
+  }
 }
+

@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const apiKeyInput = document.getElementById('api-key');
   const docTitleInput = document.getElementById('doc-title');
   const docIdInput = document.getElementById('doc-id');
+  const tabThresholdInput = document.getElementById('tab-threshold');
+  const syncInsightsCheckbox = document.getElementById('sync-insights');
   const btnSaveSettings = document.getElementById('save-settings');
   const settingsBtn = document.getElementById('settings-btn');
   const btnSyncGDoc = document.getElementById('btn-sync-gdoc');
@@ -38,10 +40,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   settingsBtn.addEventListener('click', () => showView('view-settings'));
 
   // -- Settings Management --
-  chrome.storage.local.get(['tabmind_api_key', 'tabmind_doc_title', 'tabmind_doc_id'], (data) => {
+  chrome.storage.local.get([
+    'tabmind_api_key', 
+    'tabmind_doc_title', 
+    'tabmind_doc_id',
+    'tabmind_tab_threshold',
+    'tabmind_sync_insights'
+  ], (data) => {
     if (data.tabmind_api_key) apiKeyInput.value = data.tabmind_api_key;
     if (data.tabmind_doc_title) docTitleInput.value = data.tabmind_doc_title;
     if (data.tabmind_doc_id) docIdInput.value = data.tabmind_doc_id;
+    if (data.tabmind_tab_threshold) tabThresholdInput.value = data.tabmind_tab_threshold;
+    syncInsightsCheckbox.checked = !!data.tabmind_sync_insights;
 
     if (!data.tabmind_api_key) {
       showView('view-settings');
@@ -52,11 +62,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const key = apiKeyInput.value.trim();
     const title = docTitleInput.value.trim() || 'TabMind Discovery';
     const id = docIdInput.value.trim();
+    const threshold = parseInt(tabThresholdInput.value) || 0;
+    const syncInsights = syncInsightsCheckbox.checked;
 
     chrome.storage.local.set({ 
       'tabmind_api_key': key,
       'tabmind_doc_title': title,
-      'tabmind_doc_id': id
+      'tabmind_doc_id': id,
+      'tabmind_tab_threshold': threshold,
+      'tabmind_sync_insights': syncInsights
     }, () => {
       const status = document.getElementById('save-status');
       status.innerText = 'Settings saved permanently!';
@@ -281,12 +295,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       const currentTabs = await chrome.tabs.query({ currentWindow: true });
       const suggestions = await generateSuggestions(trackingResponse.data, currentTabs);
       
-      const result = await syncToGoogleDoc(suggestions);
+      let insights = null;
+      const settings = await chrome.storage.local.get('tabmind_sync_insights');
+      if (settings.tabmind_sync_insights) {
+        insights = await generateInsights(trackingResponse.data);
+      }
       
-      if (result.count > 0) {
-        alert(`Successfully synced ${result.count} new links to "TabMind Discovery" Google Doc!`);
+      const result = await syncToGoogleDoc(suggestions, insights);
+      
+      if (result.count > 0 || (insights && result.status === 'success')) {
+        alert(`Successfully synced discovery links and weekly summary to "TabMind Discovery" Google Doc!`);
       } else {
-        alert("No new unique links found to sync.");
+        alert("No new unique content found to sync.");
       }
     } catch (err) {
       console.error(err);

@@ -6,7 +6,7 @@
 const SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive.file'];
 const SYNCED_URLS_KEY = 'tabmind_synced_urls';
 
-async function syncToGoogleDoc(suggestions) {
+async function syncToGoogleDoc(suggestions, insights = null) {
   // 0. Get user settings
   const settings = await chrome.storage.local.get(['tabmind_doc_title', 'tabmind_doc_id']);
   const configuredTitle = settings.tabmind_doc_title || 'TabMind Discovery';
@@ -22,8 +22,8 @@ async function syncToGoogleDoc(suggestions) {
   
   const newSuggestions = suggestions.filter(s => !previouslySynced.includes(s.url));
   
-  if (newSuggestions.length === 0) {
-    return { count: 0, status: 'no_new_links' };
+  if (newSuggestions.length === 0 && !insights) {
+    return { count: 0, status: 'no_new_content' };
   }
 
   // 3. Find or Create the Discovery Doc
@@ -37,11 +37,13 @@ async function syncToGoogleDoc(suggestions) {
   }
 
   // 4. Append new content
-  await appendToDoc(docId, newSuggestions, token);
+  await appendToDoc(docId, newSuggestions, insights, token);
 
   // 5. Update synced list
-  const updatedSynced = [...previouslySynced, ...newSuggestions.map(s => s.url)];
-  await chrome.storage.local.set({ [SYNCED_URLS_KEY]: updatedSynced });
+  if (newSuggestions.length > 0) {
+    const updatedSynced = [...previouslySynced, ...newSuggestions.map(s => s.url)];
+    await chrome.storage.local.set({ [SYNCED_URLS_KEY]: updatedSynced });
+  }
 
   return { count: newSuggestions.length, status: 'success' };
 }
@@ -80,25 +82,51 @@ async function createTabMindDoc(token, title) {
   return data.documentId;
 }
 
-async function appendToDoc(docId, suggestions, token) {
+async function appendToDoc(docId, suggestions, insights, token) {
   const dateStr = new Date().toLocaleDateString();
-  const requests = [
-    {
-      insertText: {
-        location: { index: 1 },
-        text: `\n\n--- Session: ${dateStr} ---\n`
-      }
-    }
-  ];
+  const requests = [];
 
-  suggestions.forEach(s => {
+  // Add Session Divider
+  requests.push({
+    insertText: {
+      location: { index: 1 },
+      text: `\n\n=========================================\nSESSION SYNC: ${dateStr}\n=========================================\n`
+    }
+  });
+
+  // 1. Append Insights (if enabled and provided)
+  if (insights) {
+    const insightText = 
+      `\n[WEEKLY PRODUCTIVITY SUMMARY]\n` +
+      `Trends: ${insights.summary}\n` +
+      `Productivity: ${insights.productivityScore}/100 (${insights.productivityLabel})\n` +
+      `Top Focus: ${insights.topCategories.map(c => `${c.name} (${c.percentage}%)`).join(', ')}\n` +
+      `Fun Facts: ${insights.funFacts.join(' • ')}\n`;
+    
     requests.push({
       insertText: {
         location: { index: 1 },
-        text: `${s.title}\n${s.url}\nNature: ${s.reason}\n\n`
+        text: insightText
       }
     });
-  });
+  }
+
+  // 2. Append Discovery Suggestions
+  if (suggestions.length > 0) {
+    let suggestionsText = `\n[DISCOVERY FINDINGS]\n`;
+    suggestions.forEach(s => {
+      suggestionsText += `• ${s.title}\n  URL: ${s.url}\n  Why: ${s.reason}\n\n`;
+    });
+    
+    requests.push({
+      insertText: {
+        location: { index: 1 },
+        text: suggestionsText
+      }
+    });
+  }
+
+  if (requests.length === 1) return; // Only divider, no content
 
   await fetch(`https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
     method: 'POST',

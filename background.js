@@ -5,7 +5,7 @@
 // ============================================================
 
 const STORAGE_KEY = 'tabmind_tracking_data';
-const MAX_AGE_DAYS = 7;
+const MAX_AGE_DAYS = 14;
 
 let currentTabInfo = null; // { tabId, url, title, startTime }
 
@@ -26,7 +26,25 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
 chrome.tabs.onCreated.addListener((tab) => {
   notifySidePanelRefresh();
+  checkTabThreshold();
 });
+
+async function checkTabThreshold() {
+  const settings = await chrome.storage.local.get('tabmind_tab_threshold');
+  const threshold = parseInt(settings.tabmind_tab_threshold);
+  if (!threshold || threshold <= 0) return;
+
+  const tabs = await chrome.tabs.query({});
+  if (tabs.length > threshold) {
+    chrome.windows.getCurrent((window) => {
+      if (chrome.sidePanel && chrome.sidePanel.open) {
+        chrome.sidePanel.open({ windowId: window.id }).catch(() => {
+          // Silent fail - often requires user gesture
+        });
+      }
+    });
+  }
+}
 
 function notifySidePanelRefresh() {
   chrome.runtime.sendMessage({ action: 'refreshAnalysis' }).catch(() => {

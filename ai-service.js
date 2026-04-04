@@ -72,73 +72,81 @@ ${tabSummaries}`;
 }
 
 async function generateInsights(trackingData) {
-  // Summarize tracking data by domain
-  const domainMap = {};
-  trackingData.forEach(entry => {
-    const d = entry.domain || 'unknown';
-    if (!domainMap[d]) {
-      domainMap[d] = { totalTime: 0, visits: 0, titles: new Set() };
-    }
-    domainMap[d].totalTime += entry.duration;
-    domainMap[d].visits += 1;
-    domainMap[d].titles.add(entry.title);
-  });
+  const now = Date.now();
+  const weekMs = 7 * 24 * 60 * 60 * 1000;
+  
+  const currentWeek = trackingData.filter(e => e.timestamp > now - weekMs);
+  const pastWeek = trackingData.filter(e => e.timestamp <= now - weekMs && e.timestamp > now - 2 * weekMs);
+  
+  const currentSummary = summarizeData(currentWeek);
+  const pastSummary = summarizeData(pastWeek);
 
-  const summary = Object.entries(domainMap)
-    .sort((a, b) => b[1].totalTime - a[1].totalTime)
-    .slice(0, 20)
-    .map(([domain, info]) => `Domain: ${domain}\n  Total Time: ${Math.round(info.totalTime / 1000)}s\n  Visits: ${info.visits}\n  Sample Titles: ${[...info.titles].slice(0, 3).join(', ')}`)
-    .join('\n\n');
-
-  const prompt = `You are an intelligent browsing analyst. Based on the following 7-day browsing activity summary, generate personalized insights about the user.
+  const prompt = `You are an intelligent browsing analyst. Compare the user's browsing activity from THIS WEEK (last 7 days) against LAST WEEK (days 8-14).
+Focus on "Time Productivity" and "Diversity of Topics". Highlight specific trends, growth, or shifts (e.g. "spending 20% more time on educational content this week than last").
 
 Provide:
-1. "summary" (string — a 2-3 sentence overview of their browsing habits)
-2. "topCategories" (array of objects with "name" and "percentage" — estimated time distribution across categories like News, Social Media, Learning, Development, Entertainment, etc.)
-3. "productivityScore" (number 1-100 — how productive their browsing has been)
-4. "productivityLabel" (string — e.g. "Highly Productive", "Balanced", "Distracted")
-5. "funFacts" (array of 3 short fun observations about their browsing)
-6. "tips" (array of 2-3 actionable tips to improve browsing habits)
+1. "summary" (string — dynamic comparison of this week vs last week habits)
+2. "topCategories" (array of objects with "name" and "percentage" for THIS week)
+3. "productivityScore" (number 1-100 for THIS week)
+4. "productivityLabel" (string — e.g. "Improving", "Highly Focused", "Diversifying")
+5. "funFacts" (array of 3 short facts comparing weeks — e.g. "New topic alert!", "Development time is up!")
+6. "tips" (array of 2-3 actionable tips based on these trends)
 
 Return ONLY a JSON object with the above fields.
 
-Browsing Activity (last 7 days):
+THIS WEEK (Summary):
+${currentSummary}
 
-${summary}`;
+LAST WEEK (Summary):
+${pastSummary.length > 0 ? pastSummary : "Not enough historical data for last week yet."}`;
 
   return await callGemini(prompt);
 }
 
-async function generateSuggestions(trackingData, currentTabs) {
-  const interests = {};
-  trackingData.forEach(entry => {
+function summarizeData(data) {
+  const domainMap = {};
+  data.forEach(entry => {
     const d = entry.domain || 'unknown';
-    if (!interests[d]) interests[d] = { time: 0, titles: [] };
-    interests[d].time += entry.duration;
-    if (interests[d].titles.length < 3) interests[d].titles.push(entry.title);
+    if (!domainMap[d]) domainMap[d] = { time: 0, titles: new Set() };
+    domainMap[d].time += entry.duration;
+    domainMap[d].titles.add(entry.title);
   });
 
-  const topInterests = Object.entries(interests)
+  return Object.entries(domainMap)
     .sort((a, b) => b[1].time - a[1].time)
-    .slice(0, 10)
-    .map(([domain, info]) => `${domain}: ${info.titles.join(', ')}`)
+    .slice(0, 15)
+    .map(([domain, info]) => `- ${domain}: ${Math.round(info.time / 1000)}s (Sample: ${Array.from(info.titles).slice(0, 2).join(', ')})`)
     .join('\n');
+}
+
+async function generateSuggestions(trackingData, currentTabs) {
+  const interestMap = {};
+  trackingData.forEach(entry => {
+    const d = entry.domain || 'unknown';
+    if (!interestMap[d]) interestMap[d] = 0;
+    interestMap[d] += entry.duration;
+  });
+
+  const topInterests = Object.entries(interestMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([domain, time]) => `${domain} (${Math.round(time / 60000)} mins)`)
+    .join(', ');
 
   const currentTabTitles = currentTabs.map(t => t.title).join(', ');
 
-  const prompt = `You are an intelligent content curator. Based on the user's browsing interests and currently open tabs, suggest excellent further reading resources.
+  const prompt = `You are an intelligent content curator. Based on the user's deep interests from the LAST 14 DAYS and their currently open tabs, suggest 5 high-quality reading resources.
+Focus more on their long-term patterns and core interests rather than just immediate activity.
 
-User's top interests (by time spent):
-${topInterests}
-
-Currently open tabs: ${currentTabTitles}
+Core Interests (Summary): ${topInterests}
+Recently/Currently Open: ${currentTabTitles}
 
 Provide exactly 5 suggestions. For each:
-1. "title" (string — catchy title for the resource)
-2. "url" (string — actual working URL to a real resource, article, or website)
-3. "source" (string — the website/publication name)
-4. "reason" (string — why this matches their interests)
-5. "category" (string — e.g. "Deep Dive", "Tutorial", "News", "Tool", "Community")
+1. "title" (string — catchy title)
+2. "url" (string — actual working URL to a real resource)
+3. "source" (string — the publication name)
+4. "reason" (string — why this matches their full week profile)
+5. "category" (string — e.g. "Deep Dive", "Tutorial", "Weekly Find")
 
 Return ONLY a JSON array of 5 suggestion objects.`;
 
