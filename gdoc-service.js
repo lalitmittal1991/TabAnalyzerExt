@@ -6,7 +6,7 @@
 const SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive.file'];
 const SYNCED_URLS_KEY = 'tabmind_synced_urls';
 
-async function syncToGoogleDoc(suggestions, insights = null) {
+async function syncToGoogleDoc(suggestions, insights = null, plan = null, trackingData = []) {
   // 0. Get user settings
   const settings = await chrome.storage.local.get(['tabmind_doc_title', 'tabmind_doc_id']);
   const configuredTitle = settings.tabmind_doc_title || 'TabMind Discovery';
@@ -35,9 +35,12 @@ async function syncToGoogleDoc(suggestions, insights = null) {
   if (!docId) {
     docId = await createTabMindDoc(token, configuredTitle);
   }
+  if (docId && configuredDocId !== docId) {
+    await chrome.storage.local.set({ tabmind_doc_id: docId });
+  }
 
   // 4. Append new content
-  await appendToDoc(docId, newSuggestions, insights, token);
+  await appendToDoc(docId, newSuggestions, insights, plan, trackingData, token);
 
   // 5. Update synced list
   if (newSuggestions.length > 0) {
@@ -62,7 +65,7 @@ async function getAuthToken() {
 
 async function findTabMindDoc(token, title) {
   const query = encodeURIComponent(`name="${title}" and mimeType="application/vnd.google-apps.document" and trashed=false`);
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}`, {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&pageSize=1&orderBy=modifiedTime desc`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   const data = await response.json();
@@ -82,33 +85,56 @@ async function createTabMindDoc(token, title) {
   return data.documentId;
 }
 
-async function appendToDoc(docId, suggestions, insights, token) {
+async function appendToDoc(docId, suggestions, insights, plan, trackingData, token) {
   const dateStr = new Date().toLocaleDateString();
-  const requests = [];
-
-  // Add Session Divider
-  requests.push({
-    insertText: {
-      location: { index: 1 },
-      text: `\n\n=========================================\nSESSION SYNC: ${dateStr}\n=========================================\n`
-    }
-  });
+  const endIndex = await getDocumentEndIndex(docId, token);
+  let sessionText = `\n\n=========================================\nSESSION SYNC: ${dateStr}\n=========================================\n`;
 
   // 1. Append Insights (if enabled and provided)
   if (insights) {
-    const insightText = 
+    const insightText =
       `\n[WEEKLY PRODUCTIVITY SUMMARY]\n` +
       `Trends: ${insights.summary}\n` +
       `Productivity: ${insights.productivityScore}/100 (${insights.productivityLabel})\n` +
       `Top Focus: ${insights.topCategories.map(c => `${c.name} (${c.percentage}%)`).join(', ')}\n` +
       `Fun Facts: ${insights.funFacts.join(' • ')}\n`;
-    
-    requests.push({
-      insertText: {
-        location: { index: 1 },
-        text: insightText
-      }
-    });
+    sessionText += insightText;
+
+    if (Array.isArray(insights.weeklyHistogram) && insights.weeklyHistogram.length) {
+      sessionText += `\n[WEEKLY TIME TABLE]\n`;
+      sessionText += `Week Range | Chrome Time (hrs)\n`;
+      sessionText += `-----------|------------------\n`;
+      insights.weeklyHistogram.forEach((w) => {
+        sessionText += `${w.label} | ${w.hours}\n`;
+      });
+    }
+  }
+
+  if (plan && Array.isArray(plan.items)) {
+    const plannedItems = plan.items.filter(i => i.planned);
+    const expectedMinutes = plannedItems.reduce((sum, i) => sum + (i.estimatedMinutes || 0), 0);
+    const plannedUrls = plannedItems.map(i => i.url).filter(Boolean);
+    const actualSuggestedMinutes = Math.round(
+      (trackingData || [])
+        .filter(e => e.timestamp >= (plan.generatedAt || 0) && plannedUrls.some(url => e.url && e.url.startsWith(url)))
+        .reduce((sum, e) => sum + (e.duration || 0), 0) / 60000
+    );
+    const chromeMinutes = Math.round(
+      (trackingData || [])
+        .filter(e => e.timestamp >= (plan.generatedAt || 0))
+        .reduce((sum, e) => sum + (e.duration || 0), 0) / 60000
+    );
+    const successPct = expectedMinutes > 0 ? Math.min(100, Math.round((actualSuggestedMinutes / expectedMinutes) * 100)) : 0;
+
+    sessionText += `\n[PLAN TRACKER TABLE]\n`;
+    sessionText += `Metric | Value\n`;
+    sessionText += `-------|------\n`;
+    sessionText += `Available till Sunday (hrs) | ${plan.availableHours || 0}\n`;
+    sessionText += `Planned content time (hrs) | ${((plan.plannedMinutes || 0) / 60).toFixed(1)}\n`;
+    sessionText += `Overall Chrome time since plan (hrs) | ${(chromeMinutes / 60).toFixed(1)}\n`;
+    sessionText += `Suggested content actual (hrs) | ${(actualSuggestedMinutes / 60).toFixed(1)}\n`;
+    sessionText += `Suggested content expected (hrs) | ${(expectedMinutes / 60).toFixed(1)}\n`;
+    sessionText += `Plan success (%) | ${successPct}\n`;
   }
 
   // 2. Append Discovery Suggestions
@@ -117,16 +143,10 @@ async function appendToDoc(docId, suggestions, insights, token) {
     suggestions.forEach(s => {
       suggestionsText += `• ${s.title}\n  URL: ${s.url}\n  Why: ${s.reason}\n\n`;
     });
-    
-    requests.push({
-      insertText: {
-        location: { index: 1 },
-        text: suggestionsText
-      }
-    });
+    sessionText += suggestionsText;
   }
 
-  if (requests.length === 1) return; // Only divider, no content
+  if (!sessionText.trim()) return;
 
   await fetch(`https://docs.googleapis.com/v1/documents/${docId}:batchUpdate`, {
     method: 'POST',
@@ -134,6 +154,22 @@ async function appendToDoc(docId, suggestions, insights, token) {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ requests })
+    body: JSON.stringify({
+      requests: [{
+        insertText: {
+          location: { index: endIndex },
+          text: sessionText
+        }
+      }]
+    })
   });
+}
+
+async function getDocumentEndIndex(docId, token) {
+  const response = await fetch(`https://docs.googleapis.com/v1/documents/${docId}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const data = await response.json();
+  const endIndex = data?.body?.content?.[data.body.content.length - 1]?.endIndex;
+  return Math.max(1, (endIndex || 2) - 1);
 }

@@ -36,15 +36,37 @@ async function checkTabThreshold() {
 
   const tabs = await chrome.tabs.query({});
   if (tabs.length > threshold) {
+    // We try to open it, but if it fails due to "user gesture" requirement, we show a notification
     chrome.windows.getCurrent((window) => {
       if (chrome.sidePanel && chrome.sidePanel.open) {
         chrome.sidePanel.open({ windowId: window.id }).catch(() => {
-          // Silent fail - often requires user gesture
+          // Fallback to notification if opening is blocked
+          showThresholdNotification(tabs.length);
         });
+      } else {
+        showThresholdNotification(tabs.length);
       }
     });
   }
 }
+
+function showThresholdNotification(count) {
+  chrome.notifications.create('tabmind_threshold_hit', {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: 'TabMind — Too many tabs!',
+    message: `You currently have ${count} tabs open. Click here to prioritize them with AI!`,
+    priority: 2
+  });
+}
+
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId === 'tabmind_threshold_hit') {
+    chrome.windows.getCurrent((window) => {
+      chrome.sidePanel.open({ windowId: window.id });
+    });
+  }
+});
 
 function notifySidePanelRefresh() {
   chrome.runtime.sendMessage({ action: 'refreshAnalysis' }).catch(() => {
@@ -142,9 +164,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       },
       (results) => {
         if (chrome.runtime.lastError || !results || !results[0]) {
-          sendResponse({ text: '' });
+          sendResponse({ text: '', metadata: {} });
         } else {
-          sendResponse({ text: results[0].result || '' });
+          const payload = results[0].result || {};
+          if (typeof payload === 'string') {
+            sendResponse({ text: payload, metadata: {} });
+          } else {
+            sendResponse({
+              text: payload.text || '',
+              metadata: payload.metadata || {}
+            });
+          }
         }
       }
     );
@@ -154,9 +184,72 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Injected function — runs in the tab context
 function extractPageText() {
+  function countWords(text) {
+    if (!text) return 0;
+    return text.split(/\s+/).filter(Boolean).length;
+  }
+
+  function parseDurationValue(value) {
+    if (!value) return null;
+    const iso = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/i);
+    if (iso) {
+      const h = parseInt(iso[1] || '0', 10);
+      const m = parseInt(iso[2] || '0', 10);
+      const s = parseInt(iso[3] || '0', 10);
+      return h * 60 + m + Math.round(s / 60);
+    }
+
+    const hms = value.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b/);
+    if (hms) {
+      if (hms[3] !== undefined) {
+        return parseInt(hms[1], 10) * 60 + parseInt(hms[2], 10) + Math.round(parseInt(hms[3], 10) / 60);
+      }
+      return parseInt(hms[1], 10) + Math.round(parseInt(hms[2], 10) / 60);
+    }
+
+    const mins = value.match(/\b(\d+)\s*min\b/i);
+    if (mins) return parseInt(mins[1], 10);
+    return null;
+  }
+
+  function extractDurationFromMeta() {
+    const selectors = [
+      'meta[itemprop="duration"]',
+      'meta[property="video:duration"]',
+      'meta[name="duration"]',
+      'meta[property="og:video:duration"]'
+    ];
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      if (!el) continue;
+      const content = el.getAttribute('content') || '';
+      const parsed = parseDurationValue(content);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+
+  function extractDurationFromVideoTag() {
+    const video = document.querySelector('video');
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return null;
+    return Math.round(video.duration / 60);
+  }
+
+  function extractDurationFromTimeElements() {
+    const nodes = Array.from(document.querySelectorAll('time, span, div'))
+      .slice(0, 200)
+      .map((el) => (el.textContent || '').trim())
+      .filter(Boolean);
+    for (const value of nodes) {
+      const parsed = parseDurationValue(value);
+      if (parsed) return parsed;
+    }
+    return null;
+  }
+
   // Get visible text, limit to ~3000 chars for API efficiency
   const body = document.body;
-  if (!body) return '';
+  if (!body) return { text: '', metadata: {} };
 
   // Remove script, style, nav, footer, header noise
   const clone = body.cloneNode(true);
@@ -168,7 +261,20 @@ function extractPageText() {
   let text = (clone.innerText || clone.textContent || '').trim();
   // Collapse whitespace
   text = text.replace(/\s+/g, ' ');
-  return text.substring(0, 3000);
+  const trimmed = text.substring(0, 3000);
+
+  const metadata = {
+    wordCount: countWords(trimmed),
+    imageCount: body.querySelectorAll('img').length,
+    codeBlockCount: body.querySelectorAll('pre, code').length,
+    videoDurationMinutes:
+      extractDurationFromMeta() ||
+      extractDurationFromVideoTag() ||
+      extractDurationFromTimeElements() ||
+      null
+  };
+
+  return { text: trimmed, metadata };
 }
 
 // ---- Initialization ----

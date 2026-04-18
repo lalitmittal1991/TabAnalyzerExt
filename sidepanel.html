@@ -27,9 +27,11 @@
       <section id="view-tabs" class="view active">
         <div id="tabs-actions" style="margin-bottom: 16px;">
           <button id="btn-analyze-tabs" class="btn btn-primary">
-            Analyze & Prioritize Open Tabs
+            Analyze Open Tabs
           </button>
         </div>
+
+        <div id="plan-metrics" class="tab-list" style="margin-bottom: 12px;"></div>
         
         <div id="loading-tabs" class="loading-overlay">
           <div class="spinner"></div>
@@ -46,15 +48,13 @@
       <!-- Insights View -->
       <section id="view-insights" class="view">
         <div id="insights-content">
-          <div id="insight-summary" class="insight-stat-card">
-            <div id="prod-score" class="score-value">--</div>
-            <div id="prod-label" class="score-label">Productivity Score</div>
-          </div>
-          
           <div id="habits-text" class="tab-nature" style="margin-bottom: 20px;"></div>
 
           <h3>Time by Category</h3>
           <div id="category-chart" class="category-chart"></div>
+
+          <h3 style="margin-top: 20px;">Chrome Time by Week</h3>
+          <div id="weekly-histogram" class="weekly-histogram"></div>
 
           <h3 style="margin-top: 20px; margin-bottom: 10px;">Fun Facts</h3>
           <div id="fun-facts" class="tab-list"></div>
@@ -115,6 +115,46 @@
         <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
           <input type="checkbox" id="sync-insights" style="width: auto;">
           <label for="sync-insights" style="margin-bottom: 0;">Sync Insights to Google Doc</label>
+        </div>
+        <div class="form-group">
+          <label>Daily Planning Hours (set Off/Holiday for 0h)</label>
+          <div class="capacity-grid">
+            <div class="capacity-row">
+              <span class="capacity-day">Mon</span>
+              <input type="number" id="hours-monday" min="0" step="0.5" placeholder="2">
+              <label class="capacity-off"><input type="checkbox" id="off-monday"> Off</label>
+            </div>
+            <div class="capacity-row">
+              <span class="capacity-day">Tue</span>
+              <input type="number" id="hours-tuesday" min="0" step="0.5" placeholder="2">
+              <label class="capacity-off"><input type="checkbox" id="off-tuesday"> Off</label>
+            </div>
+            <div class="capacity-row">
+              <span class="capacity-day">Wed</span>
+              <input type="number" id="hours-wednesday" min="0" step="0.5" placeholder="2">
+              <label class="capacity-off"><input type="checkbox" id="off-wednesday"> Off</label>
+            </div>
+            <div class="capacity-row">
+              <span class="capacity-day">Thu</span>
+              <input type="number" id="hours-thursday" min="0" step="0.5" placeholder="2">
+              <label class="capacity-off"><input type="checkbox" id="off-thursday"> Off</label>
+            </div>
+            <div class="capacity-row">
+              <span class="capacity-day">Fri</span>
+              <input type="number" id="hours-friday" min="0" step="0.5" placeholder="2">
+              <label class="capacity-off"><input type="checkbox" id="off-friday"> Off</label>
+            </div>
+            <div class="capacity-row">
+              <span class="capacity-day">Sat</span>
+              <input type="number" id="hours-saturday" min="0" step="0.5" placeholder="4">
+              <label class="capacity-off"><input type="checkbox" id="off-saturday"> Off</label>
+            </div>
+            <div class="capacity-row">
+              <span class="capacity-day">Sun</span>
+              <input type="number" id="hours-sunday" min="0" step="0.5" placeholder="4">
+              <label class="capacity-off"><input type="checkbox" id="off-sunday"> Off</label>
+            </div>
+          </div>
         </div>
         <button id="save-settings" class="btn btn-primary">Save Settings</button>
         <div id="save-status" style="margin-top: 10px; font-size: 12px; text-align: center;"></div>

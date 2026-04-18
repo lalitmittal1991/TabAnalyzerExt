@@ -10,7 +10,8 @@
     "storage",
     "alarms",
     "sidePanel",
-    "identity"
+    "identity",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
